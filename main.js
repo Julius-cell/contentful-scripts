@@ -2,20 +2,45 @@ const contentfulManagement = require("contentful-management");
 require("dotenv").config();
 
 const SPACE_ID = process.env.SPACE_ID;
-const ENVIRONMENT = "master";
+const ENVIRONMENT_SOURCE = process.env.ENVIRONMENT_SOURCE;
+const ENVIRONMENT_TARGET = process.env.ENVIRONMENT_TARGET;
 
 const clientManagement = contentfulManagement.createClient({
   accessToken: process.env.CONTENT_MANAGEMENT_ACCESS_TOKEN,
 });
 
 const main = async () => {
-  const environment = await getEnvironment(SPACE_ID, ENVIRONMENT);
+  // Get env staging
+  const envSource = await getEnvironment(SPACE_ID, ENVIRONMENT_SOURCE);
+  
+  // Get entries from content type commune
+  // const { items: communesStg } = await envSource.getPublishedEntries({
+  //   content_type: 'commune'
+  // })
+  // console.log(communesStg);
 
-  const { items: entries } = await getEntries(environment);
+  // Get env app-staging
+  const envTarget = await getEnvironment(SPACE_ID, ENVIRONMENT_TARGET);
+  
+  // DRAFT ENTRIES (ANY)
+  const response = await envSource.getEntries({
+    content_type: 'commune'
+  })
 
-  entries.forEach(async (entry) => {
-    await updateEntry(entry.sys.id, environment);
-  });
+  // PUBLISHED ENTRIES
+  // const response = await envTarget.getPublishedEntries({
+  //   content_type: 'commune'
+  // })
+
+  // RATE / PER SECOND REQUESTS
+  const rate = 7; // Peticiones por segundo
+  const delay = 1000 / rate; // Retraso entre peticiones en milisegundos
+
+  for (let i = 0; i < response.items.length; i++) {
+    await creatingEntry(envTarget, 'commune', response.items[i]);
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+
 };
 
 const getEnvironment = async (spaceId, environmentId) => {
@@ -61,5 +86,43 @@ const updateEntry = async (entryId, environment) => {
     console.error(error);
   }
 };
+
+const creatingEntry = async (environment, content_type, entry) => {
+  try {
+    console.log(`CreatingEntry entry ${entry.sys.id}`);
+    await environment.createEntry(content_type, entry);
+  } catch (error) {
+    console.error(`🔥ERROR: CreatingEntry entry ${entry.sys.id}🔥`, error.name);
+  }
+}
+
+const deletingEntry = async (entry) => {
+  try {
+    console.log(`DeletingEntry entry ${entry.sys.id}`);
+    await entry.delete();
+  } catch (error) {
+    console.error(`🔥ERROR: DeletingEntry entry ${entry.sys.id}🔥`, error.name);
+  }
+}
+
+const unpublishEntry = async (entry) => {
+  try {
+    console.log(`Unpublishing entry ${entry.sys.id}`);
+    await entry.unpublish();
+  } catch (error) {
+    console.error(`🔥ERROR: Unpublishing entry ${entry.sys.id}🔥`, error);
+  }
+}
+
+// (NOT WORKING) Función para ejecutar las peticiones al endpoint con un rate de 7 peticiones por segundo 
+const ejecutarPeticiones = async (items, fetchFunction) => {
+  const rate = 7; // Peticiones por segundo
+  const delay = 1000 / rate; // Retraso entre peticiones en milisegundos
+
+  for (let i = 0; i < items.length; i++) {
+    await fetchFunction(items[i]);
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+}
 
 main();
